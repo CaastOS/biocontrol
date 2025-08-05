@@ -221,7 +221,7 @@ if __name__ == "__main__":
         
         # If we get good results, break
         if final_error < 1e-5:
-            print(f"SUCCESS with learning rate {lr}!")
+            print(f"Converged with learning rate {lr}!")
             
             # Plot MSE vs epochs
             plt.figure(figsize=(10, 6))
