@@ -1,0 +1,4 @@
+*.npy
+*.pth
+*/camera_tools.py
+FableAPI/
