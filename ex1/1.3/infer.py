@@ -123,3 +123,16 @@ if __name__ == '__main__':
         cv2.destroyAllWindows()
         api.terminate()
         print("Application closed.")
+
+# Questions
+# 1. What happens if you change the relative position of the camera and the robot after starting your code?
+# The model will still attempt to predict joint angles based on the pixel coordinates, but the accuracy may be affected if the camera's perspective changes significantly.
+# The model was trained with a specific camera setup, so any deviation could lead to incorrect predictions. However, re-running the get_training_data.py script to collect
+# new data with the new camera position would help retrain the model for better accuracy.
+
+# 2. In your solution, is learning active all the time?
+# No, learning is not active all the time. The model is trained once using the training data collected from the robot arm's movements.
+
+# 3.If not, could you imagine a way to change your solution to have ”active” (online) learning? Would it work?
+# Yes, active learning could be implemented by continuously collecting new data during the operation
+# of the robot arm and periodically retraining the model with this new data. This would allow the model to adapt to changes in the environment.
