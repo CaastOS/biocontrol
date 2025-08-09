@@ -66,7 +66,7 @@ if __name__ == '__main__':
         model = RobotArmNet()
         model.load_state_dict(torch.load('robot_arm_model.pth'))
         model.eval()
-        print("✅ Model loaded successfully.")
+        print("Model loaded successfully.")
 
         if not cap.isOpened():
             print("Error: Could not open webcam.")
