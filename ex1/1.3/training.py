@@ -104,4 +104,4 @@ if __name__ == '__main__':
                   f"Val Loss: N/A")
 
     torch.save(model.state_dict(), 'robot_arm_model.pth')
-    print("\n✅ Training complete. Model saved to 'robot_arm_model.pth'")
+    print("\nTraining complete. Model saved to 'robot_arm_model.pth'")
