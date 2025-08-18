@@ -10,12 +10,13 @@ from FableAPI.fable_init import api
 NUM_TRIALS = 100
 OUTPUT_FILE = 'mlp_data.csv'
 FRAME_WIDTH = 640
+BASE_SPEED = 60
 FRAME_HEIGHT = 480
 
 # --- Parameters ---
-K_FORWARD = 0.5
-K_TURN = 1.2
-STOPPING_DISTANCE = 15 # How close (in pixels) to get before stopping
+K_FORWARD = 0.1
+K_TURN = 30
+STOPPING_DISTANCE = 50 # How close (in pixels) to get before stopping
 
 # --- LAB Color Ranges (from calibration) ---
 GREEN_LOWER = np.array([0,   0,   0])
@@ -58,6 +59,8 @@ def find_color_center(frame, lower_lab, upper_lab):
 
 def get_system_state(frame):
     """Gets the full state (robot & target) from a camera frame."""
+    # take a picture of frame and save it
+    cv2.imwrite('frame.jpg', frame)
     target_pos = find_color_center(frame, GREEN_LOWER, GREEN_UPPER)
     blue_pos   = find_color_center(frame, BLUE_LOWER, BLUE_UPPER)
     red_pos    = find_color_center(frame, RED_LOWER, RED_UPPER)
@@ -82,6 +85,13 @@ def calculate_expert_action(state):
     Rx, Ry, R_angle, Tx, Ty = state
     
     distance = math.sqrt((Tx - Rx)**2 + (Ty - Ry)**2)
+
+    if distance < 50:
+        speed = 30
+        turn = 15
+    else:
+        speed = BASE_SPEED
+        turn = K_TURN
     
     # If we are close enough, stop
     if distance < STOPPING_DISTANCE:
@@ -96,15 +106,14 @@ def calculate_expert_action(state):
     elif error_angle < -math.pi:
         error_angle += 2 * math.pi
 
-    # Calculate motor speeds
-    forward_command = K_FORWARD * distance
-    turn_command = K_TURN * error_angle
+    # Calculate turn command based on the angle error
+    turn_command = turn * error_angle
 
-    # Combine commands for the motors
-    left_motor_speed = forward_command - turn_command
-    right_motor_speed = forward_command + turn_command
+    # Combine a constant forward speed with the turn command
+    raw_left_speed = speed - turn_command
+    raw_right_speed = speed + turn_command
 
-    return [left_motor_speed, right_motor_speed]
+    return [raw_left_speed, raw_right_speed]
 
 # --- MAIN SCRIPT ---
 cap = cv2.VideoCapture(0)
@@ -123,6 +132,7 @@ with open(OUTPUT_FILE, 'w', newline='') as f:
         input("Place the target at a new location and press Enter to start trial...")
 
         while True:
+            print("Loop now")
             ret, frame = cap.read()
             if not ret:
                 break
@@ -140,7 +150,7 @@ with open(OUTPUT_FILE, 'w', newline='') as f:
             log_row = state + action
             writer.writerow(log_row)
 
-            api.setSpinSpeed(-action[1], action[0], wheels)
+            api.setSpinSpeed(-action[0], action[1], wheels)
             
             distance_to_target = math.sqrt((state[3] - state[0])**2 + (state[4] - state[1])**2)
             if distance_to_target < STOPPING_DISTANCE:
