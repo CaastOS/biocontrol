@@ -10,21 +10,19 @@ from FableAPI.fable_init import api
 NUM_TRIALS = 100
 OUTPUT_FILE = 'mlp_data.csv'
 FRAME_WIDTH = 640
-BASE_SPEED = 60
 FRAME_HEIGHT = 480
+BASE_SPEED = 60
+STOPPING_DISTANCE = 50
+NOISE_LEVEL = 5.0
 
 # --- Parameters ---
-K_FORWARD = 0.1
 K_TURN = 30
-STOPPING_DISTANCE = 50 # How close (in pixels) to get before stopping
 
-# --- LAB Color Ranges (from calibration) ---
+# --- LAB Color Ranges ---
 GREEN_LOWER = np.array([0,   0,   0])
 GREEN_UPPER = np.array([255, 106, 255])
-
 RED_LOWER   = np.array([97,  151, 111])
 RED_UPPER   = np.array([212, 213, 219])
-
 BLUE_LOWER  = np.array([0,   137, 0])
 BLUE_UPPER  = np.array([255, 255, 106])
 
@@ -48,72 +46,57 @@ def find_color_center(frame, lower_lab, upper_lab):
     contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     if contours:
         c = max(contours, key=cv2.contourArea)
-        # Filter small noise
         if cv2.contourArea(c) < 10:
-            print(cv2.contourArea(c), "is too small, ignoring.")
             return None
-        
         x, y, w, h = cv2.boundingRect(c)
         return (x + w // 2, y + h // 2)
     return None
 
 def get_system_state(frame):
     """Gets the full state (robot & target) from a camera frame."""
-    # take a picture of frame and save it
-    cv2.imwrite('frame.jpg', frame)
     target_pos = find_color_center(frame, GREEN_LOWER, GREEN_UPPER)
     blue_pos   = find_color_center(frame, BLUE_LOWER, BLUE_UPPER)
     red_pos    = find_color_center(frame, RED_LOWER, RED_UPPER)
 
     if not all([target_pos, blue_pos, red_pos]):
-        print("Red: {}, Blue: {}, Target: {}".format(red_pos, blue_pos, target_pos))
+        print(f"Red: {red_pos}, Blue: {blue_pos}, Target: {target_pos}")
         return None # Can't see all objects
 
-    # Robot's position is the midpoint between the blue and red markers
     Rx = (blue_pos[0] + red_pos[0]) // 2
     Ry = (blue_pos[1] + red_pos[1]) // 2
-
-    # Robot's angle is the angle from the back (red) to the front (blue)
     R_angle = math.atan2(blue_pos[1] - red_pos[1], blue_pos[0] - red_pos[0])
-
     Tx, Ty = target_pos
 
     return [Rx, Ry, R_angle, Tx, Ty]
 
-def calculate_expert_action(state):
-    """Calculates the expert motor commands based on the current state."""
-    Rx, Ry, R_angle, Tx, Ty = state
+def calculate_expert_action(allocentric_state):
+    """
+    Calculates the expert motor commands and the egocentric state.
+    Returns: ([left_speed, right_speed], [distance, error_angle])
+    """
+    Rx, Ry, R_angle, Tx, Ty = allocentric_state
     
     distance = math.sqrt((Tx - Rx)**2 + (Ty - Ry)**2)
 
     if distance < 50:
-        speed = 30
-        turn = 15
+        speed, turn = 30, 15
     else:
-        speed = BASE_SPEED
-        turn = K_TURN
+        speed, turn = BASE_SPEED, K_TURN
     
-    # If we are close enough, stop
     if distance < STOPPING_DISTANCE:
-        return [0, 0]
+        return [0, 0], [distance, 0]
 
     target_angle = math.atan2(Ty - Ry, Tx - Rx)
     error_angle = target_angle - R_angle
     
-    # Handle angle wrap-around
-    if error_angle > math.pi:
-        error_angle -= 2 * math.pi
-    elif error_angle < -math.pi:
-        error_angle += 2 * math.pi
+    if error_angle > math.pi: error_angle -= 2 * math.pi
+    elif error_angle < -math.pi: error_angle += 2 * math.pi
 
-    # Calculate turn command based on the angle error
     turn_command = turn * error_angle
-
-    # Combine a constant forward speed with the turn command
     raw_left_speed = speed - turn_command
     raw_right_speed = speed + turn_command
 
-    return [raw_left_speed, raw_right_speed]
+    return [raw_left_speed, raw_right_speed], [distance, error_angle]
 
 # --- MAIN SCRIPT ---
 cap = cv2.VideoCapture(0)
@@ -122,46 +105,59 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
 with open(OUTPUT_FILE, 'w', newline='') as f:
     writer = csv.writer(f)
-    header = ['Rx', 'Ry', 'R_angle', 'Tx', 'Ty', 'left_motor_speed', 'right_motor_speed']
+    # ## --- CHANGE: Corrected the CSV header --- ##
+    header = ['distance', 'error_angle', 'left_motor_speed', 'right_motor_speed']
     writer.writerow(header)
 
     print(f"Starting data collection for {NUM_TRIALS} trials...")
 
     for trial in range(NUM_TRIALS):
         print(f"\n--- Starting Trial {trial + 1}/{NUM_TRIALS} ---")
-        input("Place the target at a new location and press Enter to start trial...")
+        input("Place the robot and target, then press Enter to start trial...")
 
         while True:
-            print("Loop now")
             ret, frame = cap.read()
             if not ret:
                 break
+            
+            # 1. Get the global (allocentric) state from the camera
+            allocentric_state = get_system_state(frame)
 
-            state = get_system_state(frame)
-
-            if state is None:
+            # If we can't see all markers, stop the robot and wait
+            if allocentric_state is None:
                 api.setSpinSpeed(0, 0, wheels)
                 cv2.imshow("Live Feed", frame)
                 if cv2.waitKey(1) & 0xFF == ord('q'): break
                 continue
 
-            action = calculate_expert_action(state)
-
-            log_row = state + action
+            # 2. Calculate the expert's ideal action AND the egocentric state
+            expert_action, egocentric_state = calculate_expert_action(allocentric_state)
+            
+            # 3. Log the simple egocentric state and the ideal expert action
+            log_row = egocentric_state + expert_action
             writer.writerow(log_row)
 
-            api.setSpinSpeed(-action[0], action[1], wheels)
+            # 4. Add noise to the action to drive the robot for better data
+            noisy_action = [
+                expert_action[0] + random.uniform(-NOISE_LEVEL, NOISE_LEVEL),
+                expert_action[1] + random.uniform(-NOISE_LEVEL, NOISE_LEVEL)
+            ]
+            api.setSpinSpeed(-noisy_action[0], noisy_action[1], wheels)
             
-            distance_to_target = math.sqrt((state[3] - state[0])**2 + (state[4] - state[1])**2)
+            # 5. Check if the trial is over
+            distance_to_target = egocentric_state[0] # Use the already calculated distance
             if distance_to_target < STOPPING_DISTANCE:
                 print("Target reached!")
                 api.setSpinSpeed(0, 0, wheels)
-                time.sleep(1)
+                time.sleep(1) # Pause before the next trial
                 break
 
+            # Allow quitting with 'q'
+            cv2.imshow("Live Feed", frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
         
+        # Another quit check between trials
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
