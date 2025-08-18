@@ -12,12 +12,10 @@ OUTPUT_FILE = 'mlp_data.csv'
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
 
-# --- PD Controller Parameters ---
-KP = 80.0
-KD = 40.0
-BASE_SPEED = 40         # The robot's constant forward speed.
-MAX_SPEED = 100         # The maximum speed for any motor.
-STOPPING_DISTANCE = 25  # How close (in pixels) to get before stopping.
+# --- Parameters ---
+K_FORWARD = 0.5
+K_TURN = 1.2
+STOPPING_DISTANCE = 15 # How close (in pixels) to get before stopping
 
 # --- LAB Color Ranges (from calibration) ---
 GREEN_LOWER = np.array([0,   0,   0])
@@ -34,9 +32,7 @@ def find_modules():
     """Discover modules and return the first moduleID (or None)."""
     moduleids = api.discoverModules()
     if not moduleids:
-        print("No Fable modules found.")
         return None
-    print(f"Found Fable module: {moduleids[0]}")
     return moduleids
 
 api.setup(blocking=True)
@@ -55,6 +51,7 @@ def find_color_center(frame, lower_lab, upper_lab):
         if cv2.contourArea(c) < 10:
             print(cv2.contourArea(c), "is too small, ignoring.")
             return None
+        
         x, y, w, h = cv2.boundingRect(c)
         return (x + w // 2, y + h // 2)
     return None
@@ -66,13 +63,18 @@ def get_system_state(frame):
     red_pos    = find_color_center(frame, RED_LOWER, RED_UPPER)
 
     if not all([target_pos, blue_pos, red_pos]):
-        print(f"Missing: {'Target' if not target_pos else ''} {'Blue' if not blue_pos else ''} {'Red' if not red_pos else ''}")
-        return None
+        print("Red: {}, Blue: {}, Target: {}".format(red_pos, blue_pos, target_pos))
+        return None # Can't see all objects
 
+    # Robot's position is the midpoint between the blue and red markers
     Rx = (blue_pos[0] + red_pos[0]) // 2
     Ry = (blue_pos[1] + red_pos[1]) // 2
+
+    # Robot's angle is the angle from the back (red) to the front (blue)
     R_angle = math.atan2(blue_pos[1] - red_pos[1], blue_pos[0] - red_pos[0])
+
     Tx, Ty = target_pos
+
     return [Rx, Ry, R_angle, Tx, Ty]
 
 def calculate_expert_action(state):
@@ -81,23 +83,26 @@ def calculate_expert_action(state):
     
     distance = math.sqrt((Tx - Rx)**2 + (Ty - Ry)**2)
     
+    # If we are close enough, stop
     if distance < STOPPING_DISTANCE:
         return [0, 0]
 
     target_angle = math.atan2(Ty - Ry, Tx - Rx)
     error_angle = target_angle - R_angle
     
-    while error_angle > math.pi: error_angle -= 2 * math.pi
-    while error_angle < -math.pi: error_angle += 2 * math.pi
+    # Handle angle wrap-around
+    if error_angle > math.pi:
+        error_angle -= 2 * math.pi
+    elif error_angle < -math.pi:
+        error_angle += 2 * math.pi
 
-    # Use the PD controller to get a steering correction value
-    steering_correction = controller.calculate(error_angle, dt)
-    left_motor_speed = BASE_SPEED - steering_correction
-    right_motor_speed = BASE_SPEED + steering_correction
+    # Calculate motor speeds
+    forward_command = K_FORWARD * distance
+    turn_command = K_TURN * error_angle
 
-    # Clamp the motor speeds to the maximum allowed values
-    left_motor_speed = max(-MAX_SPEED, min(MAX_SPEED, left_motor_speed))
-    right_motor_speed = max(-MAX_SPEED, min(MAX_SPEED, right_motor_speed))
+    # Combine commands for the motors
+    left_motor_speed = forward_command - turn_command
+    right_motor_speed = forward_command + turn_command
 
     return [left_motor_speed, right_motor_speed]
 
@@ -111,10 +116,7 @@ with open(OUTPUT_FILE, 'w', newline='') as f:
     header = ['Rx', 'Ry', 'R_angle', 'Tx', 'Ty', 'left_motor_speed', 'right_motor_speed']
     writer.writerow(header)
 
-    with open(OUTPUT_FILE, 'w', newline='') as f:
-        writer = csv.writer(f)
-        header = ['Rx', 'Ry', 'R_angle', 'Tx', 'Ty', 'left_motor_speed', 'right_motor_speed']
-        writer.writerow(header)
+    print(f"Starting data collection for {NUM_TRIALS} trials...")
 
     for trial in range(NUM_TRIALS):
         print(f"\n--- Starting Trial {trial + 1}/{NUM_TRIALS} ---")
