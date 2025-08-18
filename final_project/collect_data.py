@@ -4,6 +4,7 @@ import math
 import csv
 import time
 import random
+
 from FableAPI.fable_init import api
 
 # --- Configuration ---
@@ -12,7 +13,7 @@ OUTPUT_FILE = 'mlp_data.csv'
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
 BASE_SPEED = 60
-STOPPING_DISTANCE = 50
+STOPPING_DISTANCE = 25
 NOISE_LEVEL = 5.0
 
 # --- Parameters ---
@@ -23,8 +24,8 @@ GREEN_LOWER = np.array([0,   0,   0])
 GREEN_UPPER = np.array([255, 106, 255])
 RED_LOWER   = np.array([97,  151, 111])
 RED_UPPER   = np.array([212, 213, 219])
-BLUE_LOWER  = np.array([0,   137, 0])
-BLUE_UPPER  = np.array([255, 255, 106])
+BLUE_LOWER  = np.array([0,   0, 0])
+BLUE_UPPER  = np.array([137, 170, 97])
 
 # --- Module ---
 def find_modules():
@@ -105,7 +106,6 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
 with open(OUTPUT_FILE, 'w', newline='') as f:
     writer = csv.writer(f)
-    # ## --- CHANGE: Corrected the CSV header --- ##
     header = ['distance', 'error_angle', 'left_motor_speed', 'right_motor_speed']
     writer.writerow(header)
 
