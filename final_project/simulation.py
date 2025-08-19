@@ -62,7 +62,6 @@ class Robot:
 
     def update(self, left_motor_speed, right_motor_speed, dt):
         """Updates the robot's state based on motor speeds and physics."""
-        # --- CHANGE: Removed redundant clamping from here. It's now handled in the main loop.
         v_left = left_motor_speed * SPEED_CONVERSION_FACTOR
         v_right = right_motor_speed * SPEED_CONVERSION_FACTOR
 
@@ -121,7 +120,6 @@ def draw_robot(screen, robot):
     # Rotate and translate chassis points
     rotated_chassis = []
     for x, y in chassis_points:
-        # Note: Swapped x/y to align shape with robot's forward direction
         rx = y * math.cos(robot.angle) - x * math.sin(robot.angle) + proj_x
         ry = y * math.sin(robot.angle) + x * math.cos(robot.angle) + proj_y
         rotated_chassis.append((rx, ry))
